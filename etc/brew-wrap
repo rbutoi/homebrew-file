@@ -32,13 +32,13 @@ brew () {
     # brew install/uninstall/tap
     install|reinstall|tap|rm|remove|uninstall|untap)
       if [ $nargs -gt 1 ];then
-        exe=("brew-file" "brew")
+        local _brew_file_update=1
       fi
       ;;
     # brew cask install/uninstall
     cask)
       if ((nargs > 2)) && [[ "$cmd2" =~ ^(rm|remove|uninstall|install|instal)$ ]]; then
-        exe=("brew-file" "brew")
+        local _brew_file_update=1
       fi
       ;;
     *)
@@ -54,22 +54,22 @@ brew () {
   fi
 
   # Execute command
-  local brewfile
-  if ! brewfile="$(brew-file cat)" 2>/dev/null;then
-    brewfile=""
-  fi
   ${env:-} "${exe[@]}" "$@"
   local ret=$?
 
-  # Commands after brew command
-  local brewfile_after
-  if ! brewfile_after="$(brew-file cat)" 2>/dev/null;then
-    brewfile_after=""
-  fi
-  if [ $ret -eq 0 ];then
-    if ! command diff <(echo "$brewfile") <(echo "$brewfile_after") >/dev/null;then
-      _post_brewfile_update
-    fi
+  # Update Brewfile in background; call _post_brewfile_update only if it changed
+  if [ $ret -eq 0 ] && [ "${_brew_file_update:-0}" -eq 1 ];then
+    local hash_before
+    hash_before=$(brew-file cat 2>/dev/null | md5)
+    (
+      brew-file dump -y &>/dev/null
+      local hash_after
+      hash_after=$(brew-file cat 2>/dev/null | md5)
+      if [ "$hash_before" != "$hash_after" ];then
+        _post_brewfile_update
+      fi
+    ) &
+    disown
   fi
 
   return $ret
